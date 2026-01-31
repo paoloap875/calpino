@@ -22,13 +22,25 @@
     <script>
         // ==================== LOGIQUE MÉTIER ====================
         
-        function optimizeCuts(cuts, stockLength) {
+        function optimizeCuts(cuts, stockLength, existingChutes = []) {
             if (!cuts || cuts.length === 0) {
                 return { bars: [], totalBars: 0, totalWaste: 0, wastePercentage: 0 };
             }
 
             const sortedCuts = [...cuts].sort((a, b) => b - a);
             const bars = [];
+
+            // Add existing chutes as bars first
+            existingChutes.forEach(chuteLength => {
+                if (chuteLength > 0) {
+                    bars.push({
+                        cuts: [],
+                        remaining: chuteLength,
+                        total: chuteLength,
+                        isChute: true
+                    });
+                }
+            });
 
             sortedCuts.forEach(cutLength => {
                 let placed = false;
@@ -45,18 +57,21 @@
                     bars.push({
                         cuts: [cutLength],
                         remaining: stockLength - cutLength,
-                        total: stockLength
+                        total: stockLength,
+                        isChute: false
                     });
                 }
             });
 
             const totalWaste = bars.reduce((sum, bar) => sum + bar.remaining, 0);
-            const totalUsed = bars.length * stockLength;
+            const newBarsCount = bars.filter(bar => !bar.isChute).length;
+            const totalUsed = newBarsCount * stockLength;
             const wastePercentage = totalUsed > 0 ? (totalWaste / totalUsed) * 100 : 0;
 
             return {
                 bars,
-                totalBars: bars.length,
+                totalBars: newBarsCount,
+                totalChutesUsed: existingChutes.length,
                 totalWaste,
                 wastePercentage
             };
@@ -81,7 +96,9 @@
             projectName: '',
             result: null,
             showExportText: false,
-            exportText: ''
+            exportText: '',
+            useChutes: false,
+            chutesText: ''
         };
 
         // ==================== ACTIONS ====================
@@ -100,7 +117,8 @@
                 return;
             }
 
-            state.result = optimizeCuts(cuts, state.stockLength);
+            const chutes = state.useChutes ? parseMeasurements(state.chutesText) : [];
+            state.result = optimizeCuts(cuts, state.stockLength, chutes);
             render();
         }
 
@@ -111,12 +129,18 @@
                 projectName: '',
                 result: null,
                 showExportText: false,
-                exportText: ''
+                exportText: '',
+                useChutes: false,
+                chutesText: ''
             };
             // Force textarea to update
             const textarea = document.getElementById('measurementsTextarea');
             if (textarea) {
                 textarea.value = '';
+            }
+            const chutesTextarea = document.getElementById('chutesTextarea');
+            if (chutesTextarea) {
+                chutesTextarea.value = '';
             }
             render();
         }
@@ -237,6 +261,19 @@
                                 class="w-full px-4 py-3 bg-black/50 border border-zinc-800 rounded-xl text-white font-mono focus:border-violet-400 focus:outline-none transition"
                                 placeholder="200"
                             />
+                            
+                            <!-- Chutes checkbox -->
+                            <div class="mt-4">
+                                <label class="flex items-center gap-3 cursor-pointer">
+                                    <input
+                                        type="checkbox"
+                                        ${state.useChutes ? 'checked' : ''}
+                                        onchange="state.useChutes = this.checked; render()"
+                                        class="w-5 h-5 bg-black/50 border-2 border-zinc-700 rounded focus:ring-2 focus:ring-violet-400"
+                                    />
+                                    <span class="text-sm text-zinc-300">Utiliser des chutes</span>
+                                </label>
+                            </div>
                         </div>
 
                         <div class="flex items-end">
@@ -246,6 +283,22 @@
                             </div>
                         </div>
                     </div>
+
+                    ${state.useChutes ? `
+                        <div class="mb-6">
+                            <label class="block text-xs font-medium text-zinc-400 mb-3 uppercase tracking-wider">
+                                Chutes en stock (cm)
+                            </label>
+                            <textarea
+                                id="chutesTextarea"
+                                oninput="state.chutesText = this.value"
+                                onblur="render()"
+                                class="w-full px-4 py-3 bg-black/50 border border-zinc-800 rounded-xl text-white font-mono focus:border-violet-400 focus:outline-none transition resize-none"
+                                rows="3"
+                                placeholder="45, 78, 120"
+                            >${state.chutesText}</textarea>
+                        </div>
+                    ` : ''}
 
                     <div class="mb-6">
                         <label class="block text-xs font-medium text-zinc-400 mb-3 uppercase tracking-wider">
@@ -300,13 +353,20 @@
                         <!-- Stats -->
                         <div class="grid grid-cols-3 gap-4 mb-6">
                             <div class="bg-black/50 border border-zinc-800 p-5 rounded-xl">
-                                <div class="text-xs text-zinc-500 mb-1 uppercase tracking-wider">Sections</div>
+                                <div class="text-xs text-zinc-500 mb-1 uppercase tracking-wider">Sections neuves</div>
                                 <div class="text-3xl font-light text-white">${state.result.totalBars}</div>
                             </div>
-                            <div class="bg-black/50 border border-zinc-800 p-5 rounded-xl">
-                                <div class="text-xs text-zinc-500 mb-1 uppercase tracking-wider">Chutes</div>
-                                <div class="text-3xl font-light text-zinc-400">${state.result.totalWaste} cm</div>
-                            </div>
+                            ${state.useChutes && state.result.totalChutesUsed > 0 ? `
+                                <div class="bg-black/50 border border-zinc-800 p-5 rounded-xl">
+                                    <div class="text-xs text-zinc-500 mb-1 uppercase tracking-wider">Chutes utilisées</div>
+                                    <div class="text-3xl font-light text-green-500">${state.result.totalChutesUsed}</div>
+                                </div>
+                            ` : `
+                                <div class="bg-black/50 border border-zinc-800 p-5 rounded-xl">
+                                    <div class="text-xs text-zinc-500 mb-1 uppercase tracking-wider">Chutes</div>
+                                    <div class="text-3xl font-light text-zinc-400">${state.result.totalWaste} cm</div>
+                                </div>
+                            `}
                             <div class="bg-black/50 border border-zinc-800 p-5 rounded-xl">
                                 <div class="text-xs text-zinc-500 mb-1 uppercase tracking-wider">% Chute</div>
                                 <div class="text-3xl font-light text-zinc-400">${state.result.wastePercentage.toFixed(1)}%</div>
@@ -345,12 +405,15 @@
                                         const totalUsed = bar.total - bar.remaining;
                                         return `
                                             <tr class="border-b border-zinc-800/50 hover:bg-zinc-800/30 transition">
-                                                <td class="px-4 py-4 font-mono text-sm text-zinc-400">#${index + 1}</td>
+                                                <td class="px-4 py-4 font-mono text-sm text-zinc-400">
+                                                    #${index + 1} ${bar.isChute ? '<span class="text-green-500 text-xs">♻️ chute</span>' : ''}
+                                                </td>
                                                 <td class="px-4 py-4">
                                                     <div class="flex flex-wrap gap-2">
                                                         ${bar.cuts.map(cut => 
                                                             `<span class="bg-zinc-800/80 text-zinc-300 px-2.5 py-1 rounded-lg text-xs font-mono border border-zinc-700">${cut}</span>`
                                                         ).join('')}
+                                                        ${bar.cuts.length === 0 ? '<span class="text-zinc-600 text-xs">-</span>' : ''}
                                                     </div>
                                                 </td>
                                                 <td class="px-4 py-4 text-center font-mono text-sm text-zinc-400">${bar.cuts.length}</td>
