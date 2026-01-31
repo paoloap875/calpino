@@ -113,6 +113,11 @@
                 showExportText: false,
                 exportText: ''
             };
+            // Force textarea to update
+            const textarea = document.getElementById('measurementsTextarea');
+            if (textarea) {
+                textarea.value = '';
+            }
             render();
         }
 
