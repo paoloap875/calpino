@@ -170,6 +170,12 @@
         // ==================== RENDER ====================
         
         function render() {
+            // Get fresh value from textarea if it exists
+            const textarea = document.getElementById('measurementsTextarea');
+            if (textarea) {
+                state.measurementsText = textarea.value;
+            }
+            
             const parsedCuts = parseMeasurements(state.measurementsText);
             
             const app = document.getElementById('app');
@@ -241,7 +247,9 @@
                             Mesures à obtenir (cm)
                         </label>
                         <textarea
-                            oninput="state.measurementsText = this.value; render()"
+                            id="measurementsTextarea"
+                            oninput="state.measurementsText = this.value"
+                            onblur="render()"
                             class="w-full px-4 py-3 bg-black/50 border border-zinc-800 rounded-xl text-white font-mono focus:border-violet-400 focus:outline-none transition resize-none"
                             rows="6"
                             placeholder="25, 18, 32"
