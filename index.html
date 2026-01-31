@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Calpino">
+    <title>Calpino - Optimisateur de Coupes</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-gray-950 via-black to-gray-900 min-h-screen">
+    <div id="app" class="max-w-5xl mx-auto p-4 md:p-6"></div>
+
+    <script>
+        // ==================== LOGIQUE MÉTIER ====================
+        
+        function optimizeCuts(cuts, stockLength) {
+            if (!cuts || cuts.length === 0) {
+                return { bars: [], totalBars: 0, totalWaste: 0, wastePercentage: 0 };
+            }
+
+            const sortedCuts = [...cuts].sort((a, b) => b - a);
+            const bars = [];
+
+            sortedCuts.forEach(cutLength => {
+                let placed = false;
+                for (let bar of bars) {
+                    if (bar.remaining >= cutLength) {
+                        bar.cuts.push(cutLength);
+                        bar.remaining -= cutLength;
+                        placed = true;
+                        break;
+                    }
+                }
+
+                if (!placed) {
+                    bars.push({
+                        cuts: [cutLength],
+                        remaining: stockLength - cutLength,
+                        total: stockLength
+                    });
+                }
+            });
+
+            const totalWaste = bars.reduce((sum, bar) => sum + bar.remaining, 0);
+            const totalUsed = bars.length * stockLength;
+            const wastePercentage = totalUsed > 0 ? (totalWaste / totalUsed) * 100 : 0;
+
+            return {
+                bars,
+                totalBars: bars.length,
+                totalWaste,
+                wastePercentage
+            };
+        }
+
+        function isValidCut(cutLength, stockLength) {
+            return cutLength > 0 && cutLength <= stockLength;
+        }
+
+        function parseMeasurements(text) {
+            return text
+                .split(/[,\s\n]+/)
+                .map(s => parseFloat(s.trim()))
+                .filter(n => !isNaN(n) && n > 0);
+        }
+
+        // ==================== STATE ====================
+        
+        let state = {
+            stockLength: 200,
+            measurementsText: '',
+            projectName: '',
+            result: null,
+            showExportText: false,
+            exportText: ''
+        };
+
+        // ==================== ACTIONS ====================
+        
+        function calculate() {
+            const cuts = parseMeasurements(state.measurementsText);
+            
+            if (cuts.length === 0) {
+                alert('Aucune mesure valide détectée !');
+                return;
+            }
+
+            const invalidCuts = cuts.filter(cut => !isValidCut(cut, state.stockLength));
+            if (invalidCuts.length > 0) {
+                alert(`Certaines mesures dépassent la longueur de base (${state.stockLength}cm) : ${invalidCuts.join(', ')}`);
+                return;
+            }
+
+            state.result = optimizeCuts(cuts, state.stockLength);
+            render();
+        }
+
+        function clearAll() {
+            state = {
+                stockLength: 200,
+                measurementsText: '',
+                projectName: '',
+                result: null,
+                showExportText: false,
+                exportText: ''
+            };
+            render();
+        }
+
+        function generateExportText() {
+            if (!state.result) return;
+
+            const cuts = parseMeasurements(state.measurementsText);
+            let text = '═══════════════════════════════════════\n';
+            text += '          CALPINO\n';
+            text += '═══════════════════════════════════════\n\n';
+            
+            if (state.projectName) {
+                text += `Projet: ${state.projectName}\n`;
+            }
+            text += `Date: ${new Date().toLocaleDateString('fr-FR')}\n\n`;
+            
+            text += `Longueur de base: ${state.stockLength} cm\n`;
+            text += `Nombre de mesures: ${cuts.length}\n\n`;
+            
+            text += '─── STATISTIQUES ───\n';
+            text += `Sections: ${state.result.totalBars}\n`;
+            text += `Chutes: ${state.result.totalWaste} cm\n`;
+            text += `% Chute: ${state.result.wastePercentage.toFixed(1)}%\n\n`;
+            
+            text += '─── DÉTAIL ───\n\n';
+            
+            state.result.bars.forEach((bar, index) => {
+                const totalUsed = bar.total - bar.remaining;
+                text += `Section #${index + 1}\n`;
+                text += `  Coupes: ${bar.cuts.join(' + ')} cm\n`;
+                text += `  Nb: ${bar.cuts.length} | Utilisé: ${totalUsed} cm | Chute: ${bar.remaining} cm\n\n`;
+            });
+            
+            text += '═══════════════════════════════════════\n';
+            text += `TOTAL: ${state.result.totalBars} sections - ${state.result.totalWaste} cm chute\n`;
+            text += '═══════════════════════════════════════';
+
+            state.exportText = text;
+            state.showExportText = true;
+            render();
+        }
+
+        function copyToClipboard() {
+            const textarea = document.getElementById('exportTextarea');
+            textarea.select();
+            document.execCommand('copy');
+            alert('✓ Copié !');
+        }
+
+        function closeExport() {
+            state.showExportText = false;
+            render();
+        }
+
+        // ==================== RENDER ====================
+        
+        function render() {
+            const parsedCuts = parseMeasurements(state.measurementsText);
+            
+            const app = document.getElementById('app');
+            app.innerHTML = `
+                <!-- Header -->
+                <div class="mb-8 flex items-center justify-between">
+                    <div class="flex items-center gap-3">
+                        <div class="bg-violet-400 p-2.5 rounded-2xl">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
+                                <circle cx="6" cy="6" r="3"></circle>
+                                <circle cx="6" cy="18" r="3"></circle>
+                                <line x1="9" y1="6" x2="21" y2="6"></line>
+                                <line x1="9" y1="18" x2="21" y2="18"></line>
+                            </svg>
+                        </div>
+                        <h1 class="text-2xl md:text-3xl font-light text-white">
+                            Calpino
+                        </h1>
+                    </div>
+                    <button
+                        onclick="clearAll()"
+                        class="px-4 py-2 bg-zinc-900 text-zinc-400 rounded-xl border border-zinc-800 hover:bg-zinc-800 hover:text-white transition text-sm"
+                    >
+                        Clear
+                    </button>
+                </div>
+
+                <!-- Project Name -->
+                <div class="bg-zinc-900/50 backdrop-blur border border-zinc-800 rounded-2xl p-6 mb-6">
+                    <label class="block text-xs font-medium text-zinc-400 mb-3 uppercase tracking-wider">
+                        Nom du projet (optionnel)
+                    </label>
+                    <input
+                        type="text"
+                        value="${state.projectName}"
+                        oninput="state.projectName = this.value"
+                        class="w-full px-4 py-3 bg-black/50 border border-zinc-800 rounded-xl text-white font-mono focus:border-violet-400 focus:outline-none transition"
+                        placeholder="Ex: Étagère salon"
+                    />
+                </div>
+
+                <!-- Input Section -->
+                <div class="bg-zinc-900/50 backdrop-blur border border-zinc-800 rounded-2xl p-6 mb-6">
+                    <div class="grid md:grid-cols-2 gap-6 mb-6">
+                        <div>
+                            <label class="block text-xs font-medium text-zinc-400 mb-3 uppercase tracking-wider">
+                                Longueur de base (cm)
+                            </label>
+                            <input
+                                type="number"
+                                inputmode="decimal"
+                                value="${state.stockLength}"
+                                oninput="state.stockLength = parseFloat(this.value) || 0"
+                                class="w-full px-4 py-3 bg-black/50 border border-zinc-800 rounded-xl text-white font-mono focus:border-violet-400 focus:outline-none transition"
+                                placeholder="200"
+                            />
+                        </div>
+
+                        <div class="flex items-end">
+                            <div class="bg-black/50 border border-zinc-800 rounded-xl p-4 w-full">
+                                <div class="text-xs text-zinc-500 mb-1">Mesures détectées</div>
+                                <div class="text-3xl font-light text-white">${parsedCuts.length}</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mb-6">
+                        <label class="block text-xs font-medium text-zinc-400 mb-3 uppercase tracking-wider">
+                            Mesures à obtenir (cm)
+                        </label>
+                        <textarea
+                            oninput="state.measurementsText = this.value; render()"
+                            class="w-full px-4 py-3 bg-black/50 border border-zinc-800 rounded-xl text-white font-mono focus:border-violet-400 focus:outline-none transition resize-none"
+                            rows="6"
+                            placeholder="25, 18, 32"
+                        >${state.measurementsText}</textarea>
+                    </div>
+
+                    ${parsedCuts.length > 0 ? `
+                        <div class="mb-6 p-4 bg-black/50 border border-zinc-800 rounded-xl">
+                            <div class="text-xs text-zinc-500 mb-3">
+                                ${parsedCuts.length} mesures
+                            </div>
+                            <div class="flex flex-wrap gap-2">
+                                ${parsedCuts.slice(0, 15).map(cut => 
+                                    `<span class="bg-zinc-800/80 text-zinc-300 px-3 py-1.5 rounded-lg text-xs font-mono border border-zinc-700">${cut}</span>`
+                                ).join('')}
+                                ${parsedCuts.length > 15 ? `<span class="text-zinc-600 text-xs px-2 py-1">+${parsedCuts.length - 15}</span>` : ''}
+                            </div>
+                        </div>
+                    ` : ''}
+
+                    <button
+                        onclick="calculate()"
+                        ${parsedCuts.length === 0 ? 'disabled' : ''}
+                        class="w-full bg-violet-400 text-white px-6 py-3.5 rounded-xl hover:bg-violet-500 transition flex items-center justify-center gap-2 font-medium disabled:bg-zinc-800 disabled:text-zinc-600 disabled:cursor-not-allowed shadow-lg shadow-violet-400/20"
+                    >
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                        </svg>
+                        Calculer
+                    </button>
+                </div>
+
+                <!-- Results Section -->
+                ${state.result ? `
+                    <div class="bg-zinc-900/50 backdrop-blur border border-zinc-800 rounded-2xl p-6 mb-6">
+                        <div class="mb-6">
+                            <h2 class="text-xl font-light text-white">
+                                ${state.projectName || 'Résultats'}
+                            </h2>
+                            ${state.projectName ? '<p class="text-xs text-zinc-500 mt-1">Résultats</p>' : ''}
+                        </div>
+                        
+                        <!-- Stats -->
+                        <div class="grid grid-cols-3 gap-4 mb-6">
+                            <div class="bg-black/50 border border-zinc-800 p-5 rounded-xl">
+                                <div class="text-xs text-zinc-500 mb-1 uppercase tracking-wider">Sections</div>
+                                <div class="text-3xl font-light text-white">${state.result.totalBars}</div>
+                            </div>
+                            <div class="bg-black/50 border border-zinc-800 p-5 rounded-xl">
+                                <div class="text-xs text-zinc-500 mb-1 uppercase tracking-wider">Chutes</div>
+                                <div class="text-3xl font-light text-zinc-400">${state.result.totalWaste} cm</div>
+                            </div>
+                            <div class="bg-black/50 border border-zinc-800 p-5 rounded-xl">
+                                <div class="text-xs text-zinc-500 mb-1 uppercase tracking-wider">% Chute</div>
+                                <div class="text-3xl font-light text-zinc-400">${state.result.wastePercentage.toFixed(1)}%</div>
+                            </div>
+                        </div>
+
+                        <!-- Export Button -->
+                        <div class="mb-6">
+                            <button
+                                onclick="generateExportText()"
+                                class="w-full bg-zinc-800 text-white px-6 py-3 rounded-xl hover:bg-zinc-700 transition flex items-center justify-center gap-2 font-medium border border-zinc-700"
+                            >
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                    <polyline points="7 10 12 15 17 10"></polyline>
+                                    <line x1="12" y1="15" x2="12" y2="3"></line>
+                                </svg>
+                                Export
+                            </button>
+                        </div>
+
+                        <!-- Table -->
+                        <div class="overflow-x-auto">
+                            <table class="w-full border-collapse">
+                                <thead>
+                                    <tr class="border-b border-zinc-800">
+                                        <th class="px-4 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">Section</th>
+                                        <th class="px-4 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">Coupes</th>
+                                        <th class="px-4 py-3 text-center text-xs font-medium text-zinc-500 uppercase tracking-wider">Nb</th>
+                                        <th class="px-4 py-3 text-right text-xs font-medium text-zinc-500 uppercase tracking-wider">Utilisé</th>
+                                        <th class="px-4 py-3 text-right text-xs font-medium text-zinc-500 uppercase tracking-wider">Chute</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${state.result.bars.map((bar, index) => {
+                                        const totalUsed = bar.total - bar.remaining;
+                                        return `
+                                            <tr class="border-b border-zinc-800/50 hover:bg-zinc-800/30 transition">
+                                                <td class="px-4 py-4 font-mono text-sm text-zinc-400">#${index + 1}</td>
+                                                <td class="px-4 py-4">
+                                                    <div class="flex flex-wrap gap-2">
+                                                        ${bar.cuts.map(cut => 
+                                                            `<span class="bg-zinc-800/80 text-zinc-300 px-2.5 py-1 rounded-lg text-xs font-mono border border-zinc-700">${cut}</span>`
+                                                        ).join('')}
+                                                    </div>
+                                                </td>
+                                                <td class="px-4 py-4 text-center font-mono text-sm text-zinc-400">${bar.cuts.length}</td>
+                                                <td class="px-4 py-4 text-right font-mono text-sm text-zinc-400">${totalUsed} cm</td>
+                                                <td class="px-4 py-4 text-right font-mono text-sm">
+                                                    <span class="${bar.remaining > 0 ? 'text-zinc-500' : 'text-green-500'}">${bar.remaining} cm</span>
+                                                </td>
+                                            </tr>
+                                        `;
+                                    }).join('')}
+                                </tbody>
+                                <tfoot>
+                                    <tr class="border-t-2 border-zinc-700">
+                                        <td class="px-4 py-4 text-xs font-medium text-zinc-500 uppercase" colspan="2">Total</td>
+                                        <td class="px-4 py-4 text-center font-mono text-sm text-white font-medium">${parsedCuts.length}</td>
+                                        <td class="px-4 py-4 text-right font-mono text-sm text-white font-medium">${state.result.totalBars * state.stockLength - state.result.totalWaste} cm</td>
+                                        <td class="px-4 py-4 text-right font-mono text-sm text-zinc-500 font-medium">${state.result.totalWaste} cm</td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+                    </div>
+                ` : ''}
+
+                <!-- Export Modal -->
+                ${state.showExportText ? `
+                    <div class="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50" onclick="closeExport()">
+                        <div class="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 max-w-2xl w-full" onclick="event.stopPropagation()">
+                            <div class="flex justify-between items-center mb-4">
+                                <h3 class="text-lg font-medium text-white">Export</h3>
+                                <button onclick="closeExport()" class="text-zinc-500 hover:text-white">
+                                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                                    </svg>
+                                </button>
+                            </div>
+                            <textarea
+                                id="exportTextarea"
+                                readonly
+                                class="w-full h-96 px-4 py-3 bg-black border border-zinc-800 rounded-xl text-white font-mono text-sm resize-none mb-4"
+                            >${state.exportText}</textarea>
+                            <button
+                                onclick="copyToClipboard()"
+                                class="w-full bg-violet-400 text-white px-6 py-3 rounded-xl hover:bg-violet-500 transition font-medium"
+                            >
+                                Copier
+                            </button>
+                        </div>
+                    </div>
+                ` : ''}
+            `;
+        }
+
+        // Initial render
+        render();
+    </script>
+</body>
+</html>
